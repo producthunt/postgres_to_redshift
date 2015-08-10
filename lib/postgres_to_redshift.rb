@@ -7,7 +7,6 @@ require 'stringio'
 require "postgres_to_redshift/table"
 require "postgres_to_redshift/column"
 require 'dotenv'
-require 'database_url'
 
 Dotenv.load
 
@@ -26,10 +25,10 @@ class PostgresToRedshift
   end
 
   def run
-    target_connection.exec('CREATE SCHEMA IF NOT EXISTS #{target_schema}')
+    target_connection.exec("CREATE SCHEMA IF NOT EXISTS #{target_schema}")
 
     tables.each do |table|
-      target_connection.exec('CREATE TABLE IF NOT EXISTS #{target_schema}.#{table.target_table_name} (#{table.columns_for_create})')
+      target_connection.exec("CREATE TABLE IF NOT EXISTS #{target_schema}.#{table.target_table_name} (#{table.columns_for_create})")
 
       export_table(table)
 
