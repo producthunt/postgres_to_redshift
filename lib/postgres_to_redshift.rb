@@ -17,8 +17,10 @@ class PostgresToRedshift
   def self.update_tables
     update_tables = PostgresToRedshift.new
 
+    target_connection.exec("CREATE SCHEMA IF NOT EXISTS #{target_schema}")
+
     update_tables.tables.each do |table|
-      target_connection.exec("CREATE TABLE IF NOT EXISTS public.#{table.target_table_name} (#{table.columns_for_create})")
+      target_connection.exec("CREATE TABLE IF NOT EXISTS #{target_schema}.#{table.target_table_name} (#{table.columns_for_create})")
 
       update_tables.copy_table(table)
 
@@ -32,6 +34,10 @@ class PostgresToRedshift
 
   def self.target_uri
     @target_uri ||= URI.parse(ENV['POSTGRES_TO_REDSHIFT_TARGET_URI'])
+  end
+
+  def self.target_schema
+    @target_schema ||= ENV['TARGET_SCHEMA'] || 'public'
   end
 
   def self.source_connection
@@ -57,6 +63,10 @@ class PostgresToRedshift
 
   def target_connection
     self.class.target_connection
+  end
+
+  def target_schema
+    self.class.target_schema
   end
 
   def tables
@@ -105,15 +115,15 @@ class PostgresToRedshift
 
   def import_table(table)
     puts "Importing #{table.target_table_name}"
-    target_connection.exec("DROP TABLE IF EXISTS public.#{table.target_table_name}_updating")
+    target_connection.exec("DROP TABLE IF EXISTS #{target_schema}.#{table.target_table_name}_updating")
 
     target_connection.exec("BEGIN;")
 
-    target_connection.exec("ALTER TABLE public.#{table.target_table_name} RENAME TO #{table.target_table_name}_updating")
+    target_connection.exec("ALTER TABLE #{target_schema}.#{table.target_table_name} RENAME TO #{table.target_table_name}_updating")
 
-    target_connection.exec("CREATE TABLE public.#{table.target_table_name} (#{table.columns_for_create})")
+    target_connection.exec("CREATE TABLE #{target_schema}.#{table.target_table_name} (#{table.columns_for_create})")
 
-    target_connection.exec("COPY public.#{table.target_table_name} FROM 's3://#{ENV['S3_DATABASE_EXPORT_BUCKET']}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';")
+    target_connection.exec("COPY #{target_schema}.#{table.target_table_name} FROM 's3://#{ENV['S3_DATABASE_EXPORT_BUCKET']}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';")
 
     target_connection.exec("COMMIT;")
   end
