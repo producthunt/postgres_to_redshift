@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-RSpec.describe PostgresToRedshift do
+RSpec.describe PostgresToRedshift, :skip do
   it 'opens a read only connection to source database' do
     read_only_state = PostgresToRedshift.source_connection.exec("SHOW transaction_read_only").first["transaction_read_only"]
 
