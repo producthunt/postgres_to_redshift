@@ -22,7 +22,7 @@ class PostgresToRedshift
     update_tables.tables.each do |table|
       target_connection.exec("CREATE TABLE IF NOT EXISTS #{target_schema}.#{table.target_table_name} (#{table.columns_for_create})")
 
-      update_tables.copy_table(table)
+      update_tables.export_table(table)
 
       update_tables.import_table(table)
     end
@@ -69,10 +69,19 @@ class PostgresToRedshift
     self.class.target_schema
   end
 
+  def export_table?(table)
+    @tables_to_export ||= ENV['TABLES_TO_EXPORT'].nil? ? [] : ENV['TABLES_TO_EXPORT'].split(',')
+
+    return false if table.name =~ /^pg_/
+
+    @tables_to_export.empty? || @tables_to_export.include?(table.name)
+  end
+
   def tables
     source_connection.exec("SELECT * FROM information_schema.tables WHERE table_schema = 'public' AND table_type in ('BASE TABLE', 'VIEW')").map do |table_attributes|
       table = Table.new(attributes: table_attributes)
-      next if table.name =~ /^pg_/
+
+      next unless export_table?(table)
       table.columns = column_definitions(table)
       table
     end.compact
@@ -90,7 +99,7 @@ class PostgresToRedshift
     @bucket ||= s3.buckets[ENV['S3_DATABASE_EXPORT_BUCKET']]
   end
 
-  def copy_table(table)
+  def export_table(table)
     buffer = StringIO.new
     zip = Zlib::GzipWriter.new(buffer)
 
@@ -102,6 +111,7 @@ class PostgresToRedshift
         zip.write(row)
       end
     end
+
     zip.finish
     buffer.rewind
     upload_table(table, buffer)
