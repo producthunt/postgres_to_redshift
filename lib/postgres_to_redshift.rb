@@ -6,71 +6,80 @@ require 'zlib'
 require 'stringio'
 require "postgres_to_redshift/table"
 require "postgres_to_redshift/column"
+require 'dotenv'
+require 'database_url'
+
+Dotenv.load
 
 class PostgresToRedshift
-  class << self
-    attr_accessor :source_uri, :target_uri
+  CONFIG = {
+    s3_bucket: ENV['S3_DATABASE_EXPORT_BUCKET'],
+    s3_key: ENV['S3_DATABASE_EXPORT_KEY'],
+    s3_id: ENV['S3_DATABASE_EXPORT_ID'],
+    schema: ENV['TARGET_SCHEMA'],
+    source_uri: ENV['POSTGRES_TO_REDSHIFT_SOURCE_URI'],
+    tables_to_export: ENV['TABLES_TO_EXPORT'],
+    target_uri: ENV['POSTGRES_TO_REDSHIFT_TARGET_URI'],
+  }
+
+  def initialize
   end
 
-  attr_reader :source_connection, :target_connection, :s3
+  def run
+    target_connection.exec('CREATE SCHEMA IF NOT EXISTS #{target_schema}')
 
-  def self.update_tables
-    update_tables = PostgresToRedshift.new
+    tables.each do |table|
+      target_connection.exec('CREATE TABLE IF NOT EXISTS #{target_schema}.#{table.target_table_name} (#{table.columns_for_create})')
 
-    target_connection.exec("CREATE SCHEMA IF NOT EXISTS #{target_schema}")
+      export_table(table)
 
-    update_tables.tables.each do |table|
-      target_connection.exec("CREATE TABLE IF NOT EXISTS #{target_schema}.#{table.target_table_name} (#{table.columns_for_create})")
-
-      update_tables.export_table(table)
-
-      update_tables.import_table(table)
+      import_table(table)
     end
   end
 
-  def self.source_uri
-    @source_uri ||= URI.parse(ENV['POSTGRES_TO_REDSHIFT_SOURCE_URI'])
+  private
+
+  def target_schema
+    @target_schema ||= CONFIG[:schema] || 'public'
   end
 
-  def self.target_uri
-    @target_uri ||= URI.parse(ENV['POSTGRES_TO_REDSHIFT_TARGET_URI'])
-  end
-
-  def self.target_schema
-    @target_schema ||= ENV['TARGET_SCHEMA'] || 'public'
-  end
-
-  def self.source_connection
-    unless instance_variable_defined?(:"@source_connection")
-      @source_connection = PG::Connection.new(host: source_uri.host, port: source_uri.port, user: source_uri.user || ENV['USER'], password: source_uri.password, dbname: source_uri.path[1..-1])
-      @source_connection.exec("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY;")
+  def source_connection
+    if @source_connection.nil?
+      @source_connection ||= PG::Connection.new(source_connection_params)
+      @source_connection.exec('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY;')
     end
 
     @source_connection
   end
 
-  def self.target_connection
-    unless instance_variable_defined?(:"@target_connection")
-      @target_connection = PG::Connection.new(host: target_uri.host, port: target_uri.port, user: target_uri.user || ENV['USER'], password: target_uri.password, dbname: target_uri.path[1..-1])
-    end
-
-    @target_connection
-  end
-
-  def source_connection
-    self.class.source_connection
-  end
-
   def target_connection
-    self.class.target_connection
+    @target_connection ||= PG::Connection.new(target_connection_params)
   end
 
-  def target_schema
-    self.class.target_schema
+  def source_connection_params
+    @source_uri ||= URI.parse(CONFIG[:source_uri])
+
+    uri_to_params(@source_uri)
+  end
+
+  def target_connection_params
+    @target_uri ||= URI.parse(CONFIG[:target_uri])
+
+    uri_to_params(@target_uri)
+  end
+
+  def uri_to_params(uri)
+    {
+      host: uri.host,
+      port: uri.port,
+      user: uri.user,
+      password: uri.password,
+      dbname: uri.path[1..-1]
+    }
   end
 
   def export_table?(table)
-    @tables_to_export ||= ENV['TABLES_TO_EXPORT'].nil? ? [] : ENV['TABLES_TO_EXPORT'].split(',')
+    @tables_to_export ||= CONFIG[:tables_to_export].nil? ? [] : CONFIG[:tables_to_export].split(',')
 
     return false if table.name =~ /^pg_/
 
@@ -92,11 +101,11 @@ class PostgresToRedshift
   end
 
   def s3
-    @s3 ||= AWS::S3.new(access_key_id: ENV['S3_DATABASE_EXPORT_ID'], secret_access_key: ENV['S3_DATABASE_EXPORT_KEY'])
+    @s3 ||= AWS::S3.new(access_key_id: CONFIG[:s3_id], secret_access_key: CONFIG[:s3_key])
   end
 
   def bucket
-    @bucket ||= s3.buckets[ENV['S3_DATABASE_EXPORT_BUCKET']]
+    @bucket ||= s3.buckets[CONFIG[:s3_bucket]]
   end
 
   def export_table(table)
@@ -129,7 +138,7 @@ class PostgresToRedshift
 
     target_connection.exec("CREATE TABLE #{target_schema}.#{table.target_temp_table_name} (#{table.columns_for_create})")
 
-    target_connection.exec("COPY #{target_schema}.#{table.target_temp_table_name} FROM 's3://#{ENV['S3_DATABASE_EXPORT_BUCKET']}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';")
+    target_connection.exec("COPY #{target_schema}.#{table.target_temp_table_name} FROM 's3://#{CONFIG[:s3_bucket]}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';")
 
     target_connection.exec("BEGIN;")
 
