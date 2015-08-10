@@ -11,7 +11,9 @@ require 'dotenv'
 Dotenv.load
 
 class PostgresToRedshift
-  CONFIG = {
+  attr_reader :config
+
+  ENV_VARIABLES = {
     s3_bucket: ENV['S3_DATABASE_EXPORT_BUCKET'],
     s3_key: ENV['S3_DATABASE_EXPORT_KEY'],
     s3_id: ENV['S3_DATABASE_EXPORT_ID'],
@@ -21,7 +23,8 @@ class PostgresToRedshift
     target_uri: ENV['POSTGRES_TO_REDSHIFT_TARGET_URI'],
   }
 
-  def initialize
+  def initialize(params = {})
+    @config = ENV_VARIABLES.merge(params)
   end
 
   def run
@@ -39,7 +42,7 @@ class PostgresToRedshift
   private
 
   def target_schema
-    @target_schema ||= CONFIG[:schema] || 'public'
+    @target_schema ||= config[:schema] || 'public'
   end
 
   def source_connection
@@ -56,13 +59,13 @@ class PostgresToRedshift
   end
 
   def source_connection_params
-    @source_uri ||= URI.parse(CONFIG[:source_uri])
+    @source_uri ||= URI.parse(config[:source_uri])
 
     uri_to_params(@source_uri)
   end
 
   def target_connection_params
-    @target_uri ||= URI.parse(CONFIG[:target_uri])
+    @target_uri ||= URI.parse(config[:target_uri])
 
     uri_to_params(@target_uri)
   end
@@ -78,7 +81,7 @@ class PostgresToRedshift
   end
 
   def export_table?(table)
-    @tables_to_export ||= CONFIG[:tables_to_export].nil? ? [] : CONFIG[:tables_to_export].split(',')
+    @tables_to_export ||= config[:tables_to_export].nil? ? [] : config[:tables_to_export].split(',')
 
     return false if table.name =~ /^pg_/
 
@@ -100,11 +103,11 @@ class PostgresToRedshift
   end
 
   def s3
-    @s3 ||= AWS::S3.new(access_key_id: CONFIG[:s3_id], secret_access_key: CONFIG[:s3_key])
+    @s3 ||= AWS::S3.new(access_key_id: config[:s3_id], secret_access_key: config[:s3_key])
   end
 
   def bucket
-    @bucket ||= s3.buckets[CONFIG[:s3_bucket]]
+    @bucket ||= s3.buckets[config[:s3_bucket]]
   end
 
   def export_table(table)
@@ -137,7 +140,7 @@ class PostgresToRedshift
 
     target_connection.exec("CREATE TABLE #{target_schema}.#{table.target_temp_table_name} (#{table.columns_for_create})")
 
-    target_connection.exec("COPY #{target_schema}.#{table.target_temp_table_name} FROM 's3://#{CONFIG[:s3_bucket]}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';")
+    target_connection.exec("COPY #{target_schema}.#{table.target_temp_table_name} FROM 's3://#{config[:s3_bucket]}/export/#{table.target_table_name}.psv.gz' CREDENTIALS 'aws_access_key_id=#{ENV['S3_DATABASE_EXPORT_ID']};aws_secret_access_key=#{ENV['S3_DATABASE_EXPORT_KEY']}' GZIP TRUNCATECOLUMNS ESCAPE DELIMITER as '|';")
 
     target_connection.exec("BEGIN;")
 
