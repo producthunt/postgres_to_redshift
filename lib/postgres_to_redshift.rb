@@ -7,9 +7,6 @@ require 'stringio'
 require "postgres_to_redshift/table"
 require "postgres_to_redshift/column"
 require 'dotenv'
-require 'database_url'
-
-Dotenv.load
 
 class PostgresToRedshift
   CONFIG = {
