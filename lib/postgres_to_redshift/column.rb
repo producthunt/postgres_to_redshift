@@ -47,12 +47,17 @@ class PostgresToRedshift::Column
   attr_accessor :attributes
 
   CAST_TYPES_FOR_COPY = {
-    "text" => "CHARACTER VARYING(65535)",
+    "ARRAY" => "CHARACTER VARYING(65535)",
+    "bytea" => "CHARACTER VARYING(65535)",
+    "hstore" => "CHARACTER VARYING(65535)",
     "json" => "CHARACTER VARYING(65535)",
     "jsonb" => "CHARACTER VARYING(65535)",
-    "bytea" => "CHARACTER VARYING(65535)",
     "money" => "DECIMAL(19,2)",
     "oid" => "CHARACTER VARYING(65535)",
+    "text" => "CHARACTER VARYING(65535)",
+    "timestamp with time zone" => "TIMESTAMP",
+    "USER-DEFINED" => "CHARACTER VARYING(65535)",
+    "uuid" => "CHARACTER VARYING(65535)",
   }
 
   def initialize(attributes: )
