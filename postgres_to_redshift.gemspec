@@ -22,4 +22,5 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rake", "~> 10.0"
   spec.add_dependency "pg", "~> 0.17.0"
   spec.add_dependency "aws-sdk", "~> 1.54"
+  spec.add_dependency "dotenv"
 end
